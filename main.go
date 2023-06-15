@@ -1,20 +1,23 @@
-// the chissoku program
 package main
 
 import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"regexp"
 	"strconv"
 	"time"
 
-	"github.com/alecthomas/kong"
 	"go.bug.st/serial"
 )
+
+// serial device
+const device = "/dev/ttyACM0"
+
+// poll interval
+const interval = 60 * time.Second
 
 // ISO8601Time utility
 type ISO8601Time time.Time
@@ -32,16 +35,15 @@ type Data struct {
 	CO2         int64       `json:"co2"`
 	Humidity    float64     `json:"humidity"`
 	Temperature float64     `json:"temperature"`
-	Tags        []string    `json:"tags,omitempty"`
 	Timestamp   ISO8601Time `json:"timestamp"`
 }
 
 // initialize and prepare the device
 func prepareDevice(p serial.Port, s *bufio.Scanner) error {
-	logInfo("Prepare device...:")
-	defer logPrintln("")
+	fmt.Print("I: Prepare device...:")
+	defer fmt.Println("")
 	for _, c := range []string{"STP", "ID?", "STA"} {
-		logPrintf(" %v", c)
+		fmt.Printf(" %v", c)
 		if _, err := p.Write([]byte(c + "\r\n")); err != nil {
 			return err
 		}
@@ -55,30 +57,19 @@ func prepareDevice(p serial.Port, s *bufio.Scanner) error {
 			}
 		}
 	}
-	logPrint(" OK.")
+	fmt.Print(" OK.")
 	return nil
 }
 
 func main() {
-	var opts Options
-
-	kong.Parse(&opts,
-		kong.Name(ProgramName),
-		kong.Vars{"version": "v" + Version},
-		kong.Description(`A CO2 sensor reader`))
-
-	if opts.Quiet {
-		logWriter = io.Discard
-	}
-
-	port, err := serial.Open(opts.Device, &serial.Mode{
+	port, err := serial.Open(device, &serial.Mode{
 		BaudRate: 115200,
 		DataBits: 8,
 		StopBits: serial.OneStopBit,
 		Parity:   serial.NoParity,
 	})
 	if err != nil {
-		logErrorf("Opening serial: %+v: %v\n", err, opts.Device)
+		fmt.Printf("E: Opening serial: %+v: %v\n", err, device)
 		os.Exit(1)
 	}
 	defer func() { port.Write([]byte("STP\r\n")); time.Sleep(time.Millisecond * 100); port.Close() }()
@@ -89,21 +80,9 @@ func main() {
 	s.Split(bufio.ScanLines)
 
 	if err := prepareDevice(port, s); err != nil {
-		logErrorln(err.Error())
+		fmt.Println("E: " + err.Error())
 		port.Close()
 		os.Exit(1)
-	}
-
-	// mqtt
-	client := newMqttClient(&opts)
-	if client != nil {
-		logInfoln("Connecting to MQTT broker...")
-		if t := client.Connect(); t.Wait() && t.Error() != nil {
-			logErrorf("%v, disable MQTT output at the time.\n", t.Error())
-			client = nil
-		} else {
-			defer client.Disconnect(1000)
-		}
 	}
 
 	// trap SIGINT
@@ -123,18 +102,12 @@ func main() {
 	// publisher
 	go func() {
 		for d := range p {
-			d.Tags = opts.Tags
 			b, err := json.Marshal(d)
 			if err != nil {
-				logError(err.Error())
+				fmt.Print("E: " + err.Error())
 				continue
 			}
-			if !opts.NoStdout {
-				fmt.Println(string(b))
-			}
-			if client != nil {
-				client.Publish(opts.Topic, byte(opts.Qos), false, b)
-			}
+			fmt.Println(string(b))
 		}
 	}()
 
@@ -142,7 +115,7 @@ func main() {
 	go func() {
 		var cur *Data // current data
 		p <- <-r      // send the first data
-		tick := time.Tick(time.Second * time.Duration(opts.Interval))
+		tick := time.Tick(interval)
 		for {
 			select {
 			case <-tick:
@@ -157,7 +130,7 @@ func main() {
 	}()
 
 	// reader (main)
-	re := regexp.MustCompile(`CO2=(\d+),HUM=([0-9\.]+),TMP=([0-9\.-]+)`)
+	re := regexp.MustCompile(`CO2=(\d+),HUM=([\d.]+),TMP=([\d.-]+)`)
 	for s.Scan() {
 		d := &Data{Timestamp: ISO8601Time(time.Now())}
 		text := s.Text()
@@ -171,10 +144,10 @@ func main() {
 		} else if text[:6] == `OK STP` {
 			return // exit 0
 		} else {
-			logWarningf("Read unmatched string: %v", text)
+			fmt.Printf("E: Read unmatched string: %v", text)
 		}
 	}
 	if s.Err() != nil {
-		logError(s.Err().Error())
+		fmt.Print("E: " + s.Err().Error())
 	}
 }
