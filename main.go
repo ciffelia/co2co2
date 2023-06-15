@@ -16,9 +16,6 @@ import (
 // serial device
 const device = "/dev/ttyACM0"
 
-// poll interval
-const interval = 60 * time.Second
-
 // ISO8601Time utility
 type ISO8601Time time.Time
 
@@ -96,36 +93,16 @@ func main() {
 
 	// serial reader channel
 	r := make(chan *Data)
-	// publisher channel
-	p := make(chan *Data)
 
 	// publisher
 	go func() {
-		for d := range p {
+		for d := range r {
 			b, err := json.Marshal(d)
 			if err != nil {
 				fmt.Print("E: " + err.Error())
 				continue
 			}
 			fmt.Println(string(b))
-		}
-	}()
-
-	// periodical dispatcher
-	go func() {
-		var cur *Data // current data
-		p <- <-r      // send the first data
-		tick := time.Tick(interval)
-		for {
-			select {
-			case <-tick:
-				if cur == nil {
-					continue
-				}
-				p <- cur  // publish current
-				cur = nil // dismiss
-			case cur = <-r:
-			}
 		}
 	}()
 
