@@ -1,4 +1,4 @@
-module github.com/northeye/chissoku
+module github.com/ciffelia/co2co2
 
 go 1.20
 
