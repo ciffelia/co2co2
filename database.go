@@ -127,8 +127,11 @@ func (d *Database) CreateRecord(r *Record) error {
 }
 
 func (d *Database) updateAverageTables(ts time.Time) error {
-	tsHour := ISO8601Time(ts.Truncate(time.Hour)).format()
-	tsDay := ISO8601Time(ts.Truncate(24 * time.Hour)).format()
+	tsHour := ts.Truncate(time.Hour).Format(time.RFC3339)
+
+	// ts.Truncate(24 * time.Hour)ではうまくいかない
+	// cf. https://qiita.com/umisama/items/b50df4888665fc36346e
+	tsDay := ts.Truncate(time.Hour).Add(-time.Duration(ts.Hour()) * time.Hour).Format(time.RFC3339)
 
 	_, err := d.updateAverageTablesStmt.Exec(
 		// 2023-06-16T14:00:00Z

@@ -66,8 +66,9 @@ func main() {
 		}
 	}()
 
+	jst := time.FixedZone("Asia/Tokyo", 9*60*60)
 	for s.Scan() {
-		ts := time.Now()
+		ts := time.Now().In(jst)
 		text := s.Text()
 
 		if text[:6] == "OK STP" {

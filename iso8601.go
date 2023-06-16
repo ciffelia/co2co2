@@ -9,7 +9,7 @@ import (
 type ISO8601Time time.Time
 
 func (t ISO8601Time) format() string {
-	return time.Time(t).In(time.UTC).Format("2006-01-02T15:04:05Z07:00")
+	return time.Time(t).Format(time.RFC3339)
 }
 
 func (t ISO8601Time) MarshalJSON() ([]byte, error) {
