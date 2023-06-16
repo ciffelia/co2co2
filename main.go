@@ -13,9 +13,6 @@ import (
 	"go.bug.st/serial"
 )
 
-// serial device
-const device = "/dev/ttyACM0"
-
 // ISO8601Time utility
 type ISO8601Time time.Time
 
@@ -59,6 +56,13 @@ func prepareDevice(p serial.Port, s *bufio.Scanner) error {
 }
 
 func main() {
+	if len(os.Args) != 2 {
+		fmt.Printf("Usage: %s <serial device>\n", os.Args[0])
+		os.Exit(1)
+	}
+
+	device := os.Args[1]
+
 	port, err := serial.Open(device, &serial.Mode{
 		BaudRate: 115200,
 		DataBits: 8,
