@@ -1,134 +1,88 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
-	"regexp"
-	"strconv"
 	"time"
-
-	"go.bug.st/serial"
 )
 
-// ISO8601Time utility
-type ISO8601Time time.Time
-
-// ISO8601 date time format
-const ISO8601 = `2006-01-02T15:04:05.000Z07:00`
-
-// MarshalJSON interface function
-func (t ISO8601Time) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Time(t).Format(ISO8601))
-}
-
-// Data - the data
-type Data struct {
-	CO2         int64       `json:"co2"`
-	Humidity    float64     `json:"humidity"`
-	Temperature float64     `json:"temperature"`
+type Record struct {
 	Timestamp   ISO8601Time `json:"timestamp"`
-}
-
-// initialize and prepare the device
-func prepareDevice(p serial.Port, s *bufio.Scanner) error {
-	fmt.Print("I: Prepare device...:")
-	defer fmt.Println("")
-	for _, c := range []string{"STP", "ID?", "STA"} {
-		fmt.Printf(" %v", c)
-		if _, err := p.Write([]byte(c + "\r\n")); err != nil {
-			return err
-		}
-		time.Sleep(time.Millisecond * 100) // wait
-		for s.Scan() {
-			t := s.Text()
-			if t[:2] == `OK` {
-				break
-			} else if t[:2] == `NG` {
-				return fmt.Errorf(" command `%v` failed", c)
-			}
-		}
-	}
-	fmt.Print(" OK.")
-	return nil
+	Co2         int64       `json:"co2"`
+	Temperature float64     `json:"temperature"`
+	Humidity    float64     `json:"humidity"`
 }
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Printf("Usage: %s <serial device>\n", os.Args[0])
-		os.Exit(1)
+		log.Fatalf("usage: %v <serial device>", os.Args[0])
 	}
-
 	device := os.Args[1]
 
-	port, err := serial.Open(device, &serial.Mode{
-		BaudRate: 115200,
-		DataBits: 8,
-		StopBits: serial.OneStopBit,
-		Parity:   serial.NoParity,
-	})
+	p, err := openSerialPort(device)
 	if err != nil {
-		fmt.Printf("E: Opening serial: %+v: %v\n", err, device)
-		os.Exit(1)
+		log.Panicf("failed to open serial device `%v`: %+v", device, err)
 	}
-	defer func() { port.Write([]byte("STP\r\n")); time.Sleep(time.Millisecond * 100); port.Close() }()
+	defer p.Close()
+	log.Println("serial port opened")
 
-	// serial reader
-	port.SetReadTimeout(time.Second * 10)
-	s := bufio.NewScanner(port)
-	s.Split(bufio.ScanLines)
-
-	if err := prepareDevice(port, s); err != nil {
-		fmt.Println("E: " + err.Error())
-		port.Close()
-		os.Exit(1)
+	s, err := startDevice(p)
+	if err != nil {
+		log.Panicf("failed to start device: %+v", err)
 	}
+	defer func() {
+		if err := stopDevice(p, s); err != nil {
+			log.Panicf("failed to stop device: %+v", err)
+		}
+	}()
+	log.Println("device started")
 
 	// trap SIGINT
-	sigch := make(chan os.Signal, 1)
-	signal.Notify(sigch, os.Interrupt)
-	// signal handler
 	go func() {
-		<-sigch
-		port.Write([]byte("STP\r\n"))
-	}()
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt)
 
-	// serial reader channel
-	r := make(chan *Data)
+		<-sigCh
 
-	// publisher
-	go func() {
-		for d := range r {
-			b, err := json.Marshal(d)
-			if err != nil {
-				fmt.Print("E: " + err.Error())
-				continue
-			}
-			fmt.Println(string(b))
+		// send STP command
+		if _, err := p.Write([]byte("STP\r\n")); err != nil {
+			panic(err)
 		}
 	}()
 
-	// reader (main)
-	re := regexp.MustCompile(`CO2=(\d+),HUM=([\d.]+),TMP=([\d.-]+)`)
 	for s.Scan() {
-		d := &Data{Timestamp: ISO8601Time(time.Now())}
+		ts := time.Now()
 		text := s.Text()
-		m := re.FindAllStringSubmatch(text, -1)
-		if len(m) > 0 {
-			d.CO2, _ = strconv.ParseInt(m[0][1], 10, 64)
-			d.Humidity, _ = strconv.ParseFloat(m[0][2], 64)
-			d.Temperature, _ = strconv.ParseFloat(m[0][3], 64)
-			d.Timestamp = ISO8601Time(time.Now())
-			r <- d
-		} else if text[:6] == `OK STP` {
-			return // exit 0
-		} else {
-			fmt.Printf("E: Read unmatched string: %v", text)
+
+		if text[:6] == "OK STP" {
+			// the device was stopped by STP command (due to SIGINT)
+			log.Println("device stopped")
+			p.Close()
+			os.Exit(130)
 		}
+
+		msg, err := parseMessage(text)
+		if err != nil {
+			log.Panicf("failed to parse message `%v`: %+v", text, err)
+		}
+
+		b, err := json.Marshal(Record{
+			Timestamp:   ISO8601Time(ts),
+			Co2:         msg.co2,
+			Temperature: msg.temperature,
+			Humidity:    msg.humidity,
+		})
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(string(b))
 	}
-	if s.Err() != nil {
-		fmt.Print("E: " + s.Err().Error())
+
+	if s.Err() == nil {
+		log.Panicf("failed to read from serial device: reached EOF")
 	}
+	log.Panicf("failed to read from serial device: %+v", s.Err())
 }
