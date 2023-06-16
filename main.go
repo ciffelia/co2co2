@@ -17,10 +17,11 @@ type Record struct {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		log.Fatalf("usage: %v <serial device>", os.Args[0])
+	if len(os.Args) != 3 {
+		log.Fatalf("usage: %v /path/to/serial_device /path/to/database_file", os.Args[0])
 	}
 	device := os.Args[1]
+	dbPath := os.Args[2]
 
 	p, err := openSerialPort(device)
 	if err != nil {
@@ -28,6 +29,18 @@ func main() {
 	}
 	defer p.Close()
 	log.Println("serial port opened")
+
+	db, err := OpenDatabase(dbPath)
+	if err != nil {
+		log.Panicf("failed to open database file `%v`: %+v", dbPath, err)
+	}
+	defer db.Close()
+	log.Println("database opened")
+
+	if err := db.Init(); err != nil {
+		log.Panicf("failed to initialize database: %+v", err)
+	}
+	log.Println("database initialized")
 
 	s, err := startDevice(p)
 	if err != nil {
@@ -60,6 +73,7 @@ func main() {
 		if text[:6] == "OK STP" {
 			// the device was stopped by STP command (due to SIGINT)
 			log.Println("device stopped")
+			db.Close()
 			p.Close()
 			os.Exit(130)
 		}
@@ -69,16 +83,22 @@ func main() {
 			log.Panicf("failed to parse message `%v`: %+v", text, err)
 		}
 
-		b, err := json.Marshal(Record{
+		record := &Record{
 			Timestamp:   ISO8601Time(ts),
 			Co2:         msg.co2,
 			Temperature: msg.temperature,
 			Humidity:    msg.humidity,
-		})
+		}
+
+		b, err := json.Marshal(record)
 		if err != nil {
 			panic(err)
 		}
 		fmt.Println(string(b))
+
+		if err := db.CreateRecord(record); err != nil {
+			log.Panicf("failed to save record to database: %+v", err)
+		}
 	}
 
 	if s.Err() == nil {

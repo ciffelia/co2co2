@@ -1,12 +1,21 @@
 package main
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"time"
 )
 
 type ISO8601Time time.Time
 
+func (t ISO8601Time) format() string {
+	return time.Time(t).In(time.UTC).Format("2006-01-02T15:04:05Z07:00")
+}
+
 func (t ISO8601Time) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Time(t).Format("2006-01-02T15:04:05.000Z07:00"))
+	return json.Marshal(t.format())
+}
+
+func (t ISO8601Time) Value() (driver.Value, error) {
+	return t.format(), nil
 }
