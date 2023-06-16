@@ -84,21 +84,8 @@ func main() {
 			log.Panicf("failed to parse message `%v`: %+v", text, err)
 		}
 
-		record := &Record{
-			Timestamp:   ISO8601Time(ts),
-			Co2:         msg.co2,
-			Temperature: msg.temperature,
-			Humidity:    msg.humidity,
-		}
-
-		b, err := json.Marshal(record)
-		if err != nil {
+		if err := handleMessage(ts, msg, db); err != nil {
 			panic(err)
-		}
-		fmt.Println(string(b))
-
-		if err := db.CreateRecord(record); err != nil {
-			log.Panicf("failed to save record to database: %+v", err)
 		}
 	}
 
@@ -106,4 +93,25 @@ func main() {
 		log.Panicf("failed to read from serial device: reached EOF")
 	}
 	log.Panicf("failed to read from serial device: %+v", s.Err())
+}
+
+func handleMessage(ts time.Time, msg *message, db *Database) error {
+	record := &Record{
+		Timestamp:   ISO8601Time(ts),
+		Co2:         msg.co2,
+		Temperature: msg.temperature,
+		Humidity:    msg.humidity,
+	}
+
+	b, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+
+	if err := db.CreateRecord(record); err != nil {
+		return fmt.Errorf("failed to save record to database: %+v", err)
+	}
+
+	return nil
 }
