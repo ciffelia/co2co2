@@ -13,9 +13,9 @@ RUN <<eot
     set -eux
 
     case $TARGETPLATFORM in
-      linux/amd64  ) GOOS=linux; GOARCH=amd64;;
-      linux/arm/v7 ) GOOS=linux; GOARCH=arm; GOARM=7;;
-      linux/arm64  ) GOOS=linux; GOARCH=arm64;;
+      linux/amd64  ) export GOOS=linux GOARCH=amd64;;
+      linux/arm/v7 ) export GOOS=linux GOARCH=arm GOARM=7;;
+      linux/arm64  ) export GOOS=linux GOARCH=arm64;;
       *            ) echo "unsupported platform $TARGETPLATFORM"; exit 1;;
     esac
 
