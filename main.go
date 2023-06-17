@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -104,11 +103,11 @@ func handleMessage(ts time.Time, msg *message, db *Database) error {
 		Humidity:    msg.humidity,
 	}
 
-	b, err := json.Marshal(record)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
+	//b, err := json.Marshal(record)
+	//if err != nil {
+	//	return err
+	//}
+	//fmt.Println(string(b))
 
 	if err := db.CreateRecord(record); err != nil {
 		return fmt.Errorf("failed to save record to database: %+v", err)
