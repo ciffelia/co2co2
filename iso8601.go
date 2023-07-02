@@ -7,6 +7,10 @@ import (
 
 type ISO8601Time time.Time
 
+func (t ISO8601Time) Unix() int64 {
+	return time.Time(t).Unix()
+}
+
 func (t ISO8601Time) format() string {
 	return time.Time(t).Format(time.RFC3339)
 }

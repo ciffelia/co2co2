@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"log"
 	"os"
 	"os/signal"
@@ -10,18 +12,13 @@ import (
 	"time"
 )
 
-type Record struct {
-	Timestamp   ISO8601Time `json:"timestamp"`
-	Co2         int64       `json:"co2"`
-	Temperature float64     `json:"temperature"`
-	Humidity    float64     `json:"humidity"`
-}
-
 func main() {
 	if len(os.Args) != 2 {
 		log.Fatalf("usage: %v /path/to/serial_device", os.Args[0])
 	}
 	device := os.Args[1]
+
+	ctx := datadog.NewDefaultContext(context.Background())
 
 	p, err := openSerialPort(device)
 	if err != nil {
@@ -55,6 +52,7 @@ func main() {
 	}()
 
 	jst := time.FixedZone("Asia/Tokyo", 9*60*60)
+	recordLastSubmittedAt := time.Unix(0, 0)
 	for s.Scan() {
 		ts := time.Now().In(jst)
 		text := s.Text()
@@ -71,8 +69,17 @@ func main() {
 			log.Panicf("failed to parse message `%v`: %+v", text, err)
 		}
 
-		if err := handleMessage(ts, msg); err != nil {
-			panic(err)
+		record := CreateRecord(ts, msg)
+		if err := printRecord(record); err != nil {
+			log.Panicf("failed to print record: %+v", err)
+		}
+
+		// submit metrics to DataDog every minute
+		if ts.Sub(recordLastSubmittedAt) > 1*time.Minute {
+			if err := SubmitRecord(ctx, record); err != nil {
+				log.Panicf("failed to send metrics to DataDog: %+v", err)
+			}
+			recordLastSubmittedAt = ts
 		}
 	}
 
@@ -82,14 +89,7 @@ func main() {
 	log.Panicf("failed to read from serial device: %+v", s.Err())
 }
 
-func handleMessage(ts time.Time, msg *message) error {
-	record := &Record{
-		Timestamp:   ISO8601Time(ts),
-		Co2:         msg.co2,
-		Temperature: msg.temperature,
-		Humidity:    msg.humidity,
-	}
-
+func printRecord(record *Record) error {
 	b, err := json.Marshal(record)
 	if err != nil {
 		return err
