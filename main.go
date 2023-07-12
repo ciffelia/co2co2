@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"log"
 	"os"
@@ -89,12 +87,12 @@ func main() {
 	log.Panicf("failed to read from serial device: %+v", s.Err())
 }
 
-func printRecord(record *Record) error {
-	b, err := json.Marshal(record)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-
-	return nil
-}
+//func printRecord(record *Record) error {
+//	b, err := json.Marshal(record)
+//	if err != nil {
+//		return err
+//	}
+//	fmt.Println(string(b))
+//
+//	return nil
+//}
