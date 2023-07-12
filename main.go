@@ -70,9 +70,9 @@ func main() {
 		}
 
 		record := CreateRecord(ts, msg)
-		if err := printRecord(record); err != nil {
-			log.Panicf("failed to print record: %+v", err)
-		}
+		//if err := printRecord(record); err != nil {
+		//	log.Panicf("failed to print record: %+v", err)
+		//}
 
 		// submit metrics to DataDog every minute
 		if ts.Sub(recordLastSubmittedAt) > 1*time.Minute {
